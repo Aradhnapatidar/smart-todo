@@ -6,9 +6,20 @@ function App() {
   const [tasks, setTasks] = useState([]);
 
   useEffect(() => {
-    // Your existing fetch code
-  }, []);
-
+  fetch("https://smart-todo-inyc.onrender.com/api/tasks/")
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("Failed to fetch tasks");
+      }
+      return response.json();
+    })
+    .then((data) => {
+      setTasks(data);
+    })
+    .catch((error) => {
+      console.error("Error fetching tasks:", error);
+    });
+}, []);
   // ADD TASK FUNCTION STARTS HERE
   async function addTask() {
     if (title.trim() === "") {
@@ -90,13 +101,13 @@ function App() {
       throw new Error("Failed to update task");
     }
 
-    const updatedTask = await response.json();
-
-    setTasks(
-      tasks.map((task) =>
-        task.id === id ? updatedTask : task
-      )
-    );
+    setTasks((previousTasks) =>
+  previousTasks.map((task) =>
+    task.id === id
+      ? { ...task, is_completed: !task.is_completed }
+      : task
+  )
+);
   } catch (error) {
     console.error("Error completing task:", error);
     alert("Could not update task. Please try again.");
