@@ -1,126 +1,134 @@
-import { useState , useEffect } from "react";
-import "react";
-function App() {
 
+import { useState, useEffect } from "react";
+import "./App.css";
+
+function App() {
   const [title, setTitle] = useState("");
   const [tasks, setTasks] = useState([]);
 
+  const API = "https://smart-todo-inyc.onrender.com/api/tasks/";
+
   useEffect(() => {
-  fetch("https://smart-todo-inyc.onrender.com/api/tasks/")
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error("Failed to fetch tasks");
-      }
-      return response.json();
-    })
-    .then((data) => {
-      setTasks(data);
-    })
-    .catch((error) => {
-      console.error("Error fetching tasks:", error);
-    });
-}, []);
-  // ADD TASK FUNCTION STARTS HERE
+    fetch(API)
+      .then((response) => {
+        if (!response.ok) throw new Error("Failed to fetch tasks");
+        return response.json();
+      })
+      .then((data) => setTasks(data))
+      .catch((error) => console.error("Fetch error:", error));
+  }, []);
+
+  const completedTasks = tasks.filter(
+    (task) => task.is_completed
+  ).length;
+
+  const pendingTasks = tasks.length - completedTasks;
+
   async function addTask() {
-    if (title.trim() === "") {
+    if (!title.trim()) {
       alert("Please enter a task!");
       return;
     }
 
     try {
-      const response = await fetch(
-        "https://smart-todo-inyc.onrender.com/api/tasks/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            title: title,
-            description: "",
-            reminder_at: null,
-          }),
-        }
-      );
+      const response = await fetch(API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: "",
+          reminder_at: null,
+        }),
+      });
 
-      if (!response.ok) {
-        throw new Error("Failed to add task");
-      }
+      if (!response.ok) throw new Error("Failed to add task");
 
       const newTask = await response.json();
-
-      setTasks([...tasks, newTask]);
+      setTasks((previous) => [...previous, newTask]);
       setTitle("");
     } catch (error) {
-      console.error("Error adding task:", error);
-      alert("Could not add task. Please try again.");
+      console.error(error);
+      alert("Could not add task.");
     }
   }
-  // ADD TASK FUNCTION ENDS HERE
 
   async function deleteTask(id) {
-  try {
-    const response = await fetch(
-      `https://smart-todo-inyc.onrender.com/api/tasks/${id}/`,
-      {
+    try {
+      const response = await fetch(`${API}${id}/`, {
         method: "DELETE",
-      }
-    );
+      });
 
-    if (!response.ok) {
-      throw new Error("Failed to delete task");
+      if (!response.ok) throw new Error("Failed to delete task");
+
+      setTasks((previous) =>
+        previous.filter((task) => task.id !== id)
+      );
+    } catch (error) {
+      console.error(error);
+      alert("Could not delete task.");
     }
-
-    setTasks(tasks.filter((task) => task.id !== id));
-  } catch (error) {
-    console.error("Error deleting task:", error);
-    alert("Could not delete task. Please try again.");
   }
-}
 
- async function completeTask(id) {
-  const task = tasks.find((task) => task.id === id);
+
+async function completeTask(id) {
+  const task = tasks.find((item) => item.id === id);
 
   if (!task) return;
 
   try {
-    const response = await fetch(
-      `https://smart-todo-inyc.onrender.com/api/tasks/${id}/`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          is_completed: !task.is_completed,
-        }),
-      }
-    );
+    const response = await fetch(`${API}${id}/`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        is_completed: !task.is_completed,
+      }),
+    });
 
     if (!response.ok) {
       throw new Error("Failed to update task");
     }
 
+    // Keep the original task details and update only its status
     setTasks((previousTasks) =>
-  previousTasks.map((task) =>
-    task.id === id
-      ? { ...task, is_completed: !task.is_completed }
-      : task
-  )
-);
+      previousTasks.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              is_completed: !task.is_completed,
+            }
+          : item
+      )
+    );
   } catch (error) {
-    console.error("Error completing task:", error);
-    alert("Could not update task. Please try again.");
+    console.error("Complete task error:", error);
+    alert("Could not update task.");
   }
 }
 
 
-
-
   return (
     <div className="app">
-      <h1>Smart To-Do List</h1>
+      <h1>Smart To-Do Dashboard</h1>
       <p>Organize your day and complete your goals!</p>
+
+      <div className="dashboard-stats">
+        <div className="stat-card">
+          <h3>Total Tasks</h3>
+          <h2>{tasks.length}</h2>
+        </div>
+
+        <div className="stat-card">
+          <h3>Completed</h3>
+          <h2>{completedTasks}</h2>
+        </div>
+
+        <div className="stat-card">
+          <h3>Pending</h3>
+          <h2>{pendingTasks}</h2>
+        </div>
+      </div>
 
       <div className="task-input">
         <input
@@ -140,11 +148,11 @@ function App() {
         tasks.map((task) => (
           <div className="task" key={task.id}>
             <span
-              className={task.is_completed ? "completed" : ""}
-              onClick={() => completeTask(task.id)}
-            >
-              {task.title}
-            </span>
+  className={task.is_completed ? "completed" : ""}
+  onClick={() => completeTask(task.id)}
+>
+  {task.title || "Untitled Task"}
+</span>
 
             <button onClick={() => deleteTask(task.id)}>
               Delete
