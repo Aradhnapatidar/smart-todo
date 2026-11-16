@@ -1,104 +1,189 @@
 
-import json
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.password_validation import validate_password
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.authtoken.models import Token
+from rest_framework.response import Response
+from rest_framework import status
+from django.shortcuts import get_object_or_404
+
 from .models import Task
+from .serializers import TaskSerializer
 
 
-def task_data(task):
-    return {
-        "id": task.id,
-        "title": task.title,
-        "description": task.description,
-        "due_date": task.due_date,
-        "reminder_at": task.reminder_at,
-        "priority": task.priority,
-        "is_completed": task.is_completed,
-        "created_at": task.created_at,
-    }
+User = get_user_model()
 
 
-@csrf_exempt
+# USER REGISTRATION
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def register(request):
+
+    username = request.data.get("username", "").strip()
+    password = request.data.get("password", "")
+    email = request.data.get("email", "").strip()
+
+    if not username or not password:
+        return Response(
+            {"error": "Username and password are required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if User.objects.filter(username=username).exists():
+        return Response(
+            {"error": "Username already exists."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        validate_password(password)
+
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password
+        )
+
+        token, created = Token.objects.get_or_create(user=user)
+
+        return Response({
+            "message": "Account created successfully.",
+            "token": token.key,
+            "username": user.username
+        }, status=status.HTTP_201_CREATED)
+
+    except Exception as error:
+        return Response(
+            {"error": str(error)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+# USER LOGIN
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def login(request):
+
+    username = request.data.get("username", "").strip()
+    password = request.data.get("password", "")
+
+    user = authenticate(
+        request,
+        username=username,
+        password=password
+    )
+
+    if user is None:
+        return Response(
+            {"error": "Invalid username or password."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    token, created = Token.objects.get_or_create(user=user)
+
+    return Response({
+        "message": "Login successful.",
+        "token": token.key,
+        "username": user.username
+    })
+
+
+# USER LOGOUT
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def logout(request):
+
+    request.user.auth_token.delete()
+
+    return Response({
+        "message": "Logout successful."
+    })
+
+
+# TASK LIST AND CREATE
+@api_view(["GET", "POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def task_list(request):
 
     if request.method == "GET":
-        tasks = [task_data(task) for task in Task.objects.all()]
-        return JsonResponse(tasks, safe=False)
+
+        tasks = Task.objects.filter(
+            user=request.user
+        ).order_by("-created_at")
+
+        serializer = TaskSerializer(tasks, many=True)
+
+        return Response(serializer.data)
 
     if request.method == "POST":
-        try:
-            data = json.loads(request.body)
 
-            task = Task.objects.create(
-                title=data.get("title", ""),
-                description=data.get("description", ""),
-                reminder_at=data.get("reminder_at"),
-                priority=data.get("priority", "medium")
+        serializer = TaskSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save(user=request.user)
+
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED
             )
 
-            return JsonResponse(task_data(task), status=201)
-
-        except (json.JSONDecodeError, TypeError, ValueError):
-            return JsonResponse(
-                {"error": "Invalid task data"},
-                status=400
-            )
-
-    return JsonResponse(
-        {"error": "Method not allowed"},
-        status=405
-    )
-
-
-@csrf_exempt
-def task_detail(request, task_id):
-
-    try:
-        task = Task.objects.get(id=task_id)
-
-    except Task.DoesNotExist:
-        return JsonResponse(
-            {"error": "Task not found"},
-            status=404
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
         )
 
+
+# TASK DETAIL, UPDATE AND DELETE
+@api_view(["GET", "PATCH", "DELETE"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def task_detail(request, task_id):
+
+    task = get_object_or_404(
+        Task,
+        id=task_id,
+        user=request.user
+    )
+
     if request.method == "GET":
-        return JsonResponse(task_data(task))
+
+        serializer = TaskSerializer(task)
+
+        return Response(serializer.data)
 
     if request.method == "PATCH":
-        try:
-            data = json.loads(request.body)
 
-            if "title" in data:
-                task.title = data["title"]
+        serializer = TaskSerializer(
+            task,
+            data=request.data,
+            partial=True
+        )
 
-            if "description" in data:
-                task.description = data["description"]
+        if serializer.is_valid():
+            serializer.save()
 
-            if "is_completed" in data:
-                task.is_completed = data["is_completed"]
+            return Response(serializer.data)
 
-            if "priority" in data:
-                task.priority = data["priority"]
-
-            task.save()
-
-            return JsonResponse(task_data(task))
-
-        except (json.JSONDecodeError, TypeError, ValueError):
-            return JsonResponse(
-                {"error": "Invalid task data"},
-                status=400
-            )
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     if request.method == "DELETE":
+
         task.delete()
 
-        return JsonResponse({
-            "message": "Task deleted successfully"
-        })
-
-    return JsonResponse(
-        {"error": "Method not allowed"},
-        status=405
-    )
+        return Response(
+            {"message": "Task deleted successfully."},
+            status=status.HTTP_200_OK
+        )
