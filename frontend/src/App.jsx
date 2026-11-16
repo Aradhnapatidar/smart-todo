@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from "react";
 import "./App.css";
 
@@ -5,13 +6,11 @@ function App() {
   const [title, setTitle] = useState("");
   const [tasks, setTasks] = useState([]);
 
-  // Reminder states
   const [reminderDate, setReminderDate] = useState("");
   const [reminderHour, setReminderHour] = useState("08");
   const [reminderMinute, setReminderMinute] = useState("00");
   const [reminderPeriod, setReminderPeriod] = useState("AM");
 
-  // Prevent duplicate notifications
   const notifiedTasks = useRef(new Set());
 
   const API = "https://smart-todo-inyc.onrender.com/api/tasks/";
@@ -20,13 +19,25 @@ function App() {
   useEffect(() => {
     fetch(API)
       .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to fetch tasks");
-        }
+        if (!response.ok) throw new Error("Failed to fetch tasks");
         return response.json();
       })
       .then((data) => setTasks(data))
       .catch((error) => console.error("Fetch error:", error));
+  }, []);
+
+  // Register Service Worker
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((registration) => {
+          console.log("Service Worker registered:", registration.scope);
+        })
+        .catch((error) => {
+          console.error("Service Worker error:", error);
+        });
+    }
   }, []);
 
   // Dashboard statistics
@@ -35,6 +46,40 @@ function App() {
   ).length;
 
   const pendingTasks = tasks.length - completedTasks;
+
+  // Enable notifications
+  async function enableNotifications() {
+    if (!("Notification" in window)) {
+      alert("Your browser does not support notifications.");
+      return;
+    }
+
+    if (!("serviceWorker" in navigator)) {
+      alert("Service Worker is not supported.");
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+
+      if (permission !== "granted") {
+        alert("Please allow notifications in browser settings.");
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+
+      await registration.showNotification("Smart To-Do 🔔", {
+        body: "Notifications enabled successfully!",
+        tag: "notification-test",
+      });
+
+      alert("Notifications enabled successfully!");
+    } catch (error) {
+      console.error("Notification error:", error);
+      alert("Could not enable notifications: " + error.message);
+    }
+  }
 
   // Add task with reminder
   async function addTask() {
@@ -45,7 +90,6 @@ function App() {
 
     let reminderISO = null;
 
-    // Convert AM/PM time into local date and time
     if (reminderDate) {
       let hour = Number(reminderHour);
 
@@ -82,15 +126,12 @@ function App() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to add task");
-      }
+      if (!response.ok) throw new Error("Failed to add task");
 
       const newTask = await response.json();
 
       setTasks((previous) => [...previous, newTask]);
 
-      // Reset inputs
       setTitle("");
       setReminderDate("");
       setReminderHour("08");
@@ -110,13 +151,13 @@ function App() {
         method: "DELETE",
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to delete task");
-      }
+      if (!response.ok) throw new Error("Failed to delete task");
 
       setTasks((previous) =>
         previous.filter((task) => task.id !== id)
       );
+
+      notifiedTasks.current.delete(id);
 
     } catch (error) {
       console.error("Delete task error:", error);
@@ -127,7 +168,6 @@ function App() {
   // Complete or uncomplete task
   async function completeTask(id) {
     const task = tasks.find((item) => item.id === id);
-
     if (!task) return;
 
     try {
@@ -141,17 +181,12 @@ function App() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to update task");
-      }
+      if (!response.ok) throw new Error("Failed to update task");
 
-      setTasks((previousTasks) =>
-        previousTasks.map((item) =>
+      setTasks((previous) =>
+        previous.map((item) =>
           item.id === id
-            ? {
-                ...item,
-                is_completed: !task.is_completed,
-              }
+            ? { ...item, is_completed: !task.is_completed }
             : item
         )
       );
@@ -162,63 +197,64 @@ function App() {
     }
   }
 
-  // Enable browser notifications
-  async function enableNotifications() {
-    if (!("Notification" in window)) {
-      alert("Your browser does not support notifications.");
-      return;
-    }
-
-    const permission = await Notification.requestPermission();
-
-    if (permission === "granted") {
-      alert("Notifications enabled successfully!");
-    } else {
-      alert("Please allow notifications in browser settings.");
-    }
-  }
-
-  // Check reminders every 5 seconds
+  // Check reminders
   useEffect(() => {
-    function checkReminders() {
+    let active = true;
+
+    async function checkReminders() {
       if (
+        !active ||
         !("Notification" in window) ||
         Notification.permission !== "granted"
       ) {
         return;
       }
 
-      const now = Date.now();
-
-      tasks.forEach((task) => {
-        if (
+      const dueTasks = tasks.filter((task) => {
+        return (
           task.reminder_at &&
           !task.is_completed &&
           !notifiedTasks.current.has(task.id) &&
-          new Date(task.reminder_at).getTime() <= now
-        ) {
-          new Notification("Smart To-Do Reminder 🔔", {
-            body: `Time to complete: ${task.title}`,
-          });
+          new Date(task.reminder_at).getTime() <= Date.now()
+        );
+      });
+
+      if (dueTasks.length === 0) return;
+
+      try {
+        const registration = await navigator.serviceWorker.ready;
+
+        for (const task of dueTasks) {
+          if (!active) return;
+
+          await registration.showNotification(
+            "Smart To-Do Reminder 🔔",
+            {
+              body: `Time to complete: ${task.title}`,
+              tag: `task-${task.id}`,
+            }
+          );
 
           notifiedTasks.current.add(task.id);
         }
-      });
+      } catch (error) {
+        console.error("Reminder notification error:", error);
+      }
     }
 
     checkReminders();
 
     const interval = setInterval(checkReminders, 5000);
 
-    return () => clearInterval(interval);
-
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [tasks]);
 
-  // Format reminder date and time
+  // Format reminder
   function formatReminder(date) {
-    if (!date) {
-      return "No reminder set";
-    }
+    if (!date) return "No reminder set";
 
     return new Date(date).toLocaleString("en-IN", {
       day: "2-digit",
@@ -232,15 +268,10 @@ function App() {
 
   return (
     <div className="app">
-
       <h1>Smart To-Do Dashboard</h1>
-
       <p>Organize your day and complete your goals!</p>
 
-      {/* Dashboard Statistics */}
-
       <div className="dashboard-stats">
-
         <div className="stat-card">
           <h3>Total Tasks</h3>
           <h2>{tasks.length}</h2>
@@ -255,21 +286,15 @@ function App() {
           <h3>Pending</h3>
           <h2>{pendingTasks}</h2>
         </div>
-
       </div>
 
-      {/* Task Input */}
-
       <div className="task-input">
-
         <input
           type="text"
           placeholder="Enter your task..."
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
-
-        {/* Reminder Date */}
 
         <input
           type="date"
@@ -278,24 +303,15 @@ function App() {
           onChange={(e) => setReminderDate(e.target.value)}
         />
 
-        {/* Reminder Hour */}
-
         <select
           value={reminderHour}
           onChange={(e) => setReminderHour(e.target.value)}
         >
           {Array.from({ length: 12 }, (_, i) => {
             const hour = String(i + 1).padStart(2, "0");
-
-            return (
-              <option key={hour} value={hour}>
-                {hour}
-              </option>
-            );
+            return <option key={hour} value={hour}>{hour}</option>;
           })}
         </select>
-
-        {/* Reminder Minute */}
 
         <select
           value={reminderMinute}
@@ -303,16 +319,9 @@ function App() {
         >
           {Array.from({ length: 60 }, (_, i) => {
             const minute = String(i).padStart(2, "0");
-
-            return (
-              <option key={minute} value={minute}>
-                {minute}
-              </option>
-            );
+            return <option key={minute} value={minute}>{minute}</option>;
           })}
         </select>
-
-        {/* AM / PM */}
 
         <select
           value={reminderPeriod}
@@ -322,59 +331,37 @@ function App() {
           <option value="PM">PM</option>
         </select>
 
-        <button onClick={addTask}>
-          Add Task
-        </button>
-
+        <button onClick={addTask}>Add Task</button>
       </div>
-
-      {/* Notification Permission */}
 
       <button onClick={enableNotifications}>
         Enable Notifications 🔔
       </button>
 
-      {/* Task List */}
-
       <h2>My Tasks ({tasks.length})</h2>
 
       {tasks.length === 0 ? (
-
         <p>No tasks yet. Add your first task!</p>
-
       ) : (
-
         tasks.map((task) => (
-
           <div className="task" key={task.id}>
-
             <div>
-
               <span
-                className={
-                  task.is_completed ? "completed" : ""
-                }
+                className={task.is_completed ? "completed" : ""}
                 onClick={() => completeTask(task.id)}
               >
                 {task.title || "Untitled Task"}
               </span>
 
-              <p>
-                🔔 {formatReminder(task.reminder_at)}
-              </p>
-
+              <p>🔔 {formatReminder(task.reminder_at)}</p>
             </div>
 
             <button onClick={() => deleteTask(task.id)}>
               Delete
             </button>
-
           </div>
-
         ))
-
       )}
-
     </div>
   );
 }
