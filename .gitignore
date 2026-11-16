@@ -2,3 +2,16 @@ node_modules/
 dist/
 .env
 .env.local
+
+node_modules/
+dist/
+.env
+.env.local
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# Django local database
+db.sqlite3
