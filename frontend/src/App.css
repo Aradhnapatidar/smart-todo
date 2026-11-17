@@ -160,3 +160,58 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+
+.auth-container {
+  max-width: 500px;
+  margin: 70px auto;
+  text-align: center;
+}
+
+.auth-box {
+  background: white;
+  padding: 30px;
+  margin-top: 25px;
+  border-radius: 15px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.auth-box form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.auth-box input {
+  padding: 12px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.auth-box button {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: #5145cd;
+  color: white;
+  cursor: pointer;
+}
+
+.auth-box .link-button {
+  background: none;
+  color: #5145cd;
+  padding: 5px;
+}
+
+.error-message {
+  color: red;
+}
+
+.welcome-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+}
+
