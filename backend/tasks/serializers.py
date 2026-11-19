@@ -15,6 +15,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "due_date",
             "reminder_at",
             "priority",
+            "category",
             "is_completed",
             "created_at",
         ]

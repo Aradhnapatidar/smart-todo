@@ -4,6 +4,20 @@ from django.db import models
 
 
 class Task(models.Model):
+    CATEGORY_CHOICES = [
+        ("Personal", "Personal"),
+        ("Work", "Work"),
+        ("Study", "Study"),
+        ("Health", "Health"),
+        ("Other", "Other"),
+    ]
+
+    PRIORITY_CHOICES = [
+        ("high", "High"),
+        ("medium", "Medium"),
+        ("low", "Low"),
+    ]
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -19,12 +33,14 @@ class Task(models.Model):
 
     priority = models.CharField(
         max_length=10,
-        choices=[
-            ("high", "High"),
-            ("medium", "Medium"),
-            ("low", "Low"),
-        ],
+        choices=PRIORITY_CHOICES,
         default="medium"
+    )
+
+    category = models.CharField(
+        max_length=20,
+        choices=CATEGORY_CHOICES,
+        default="Personal"
     )
 
     is_completed = models.BooleanField(default=False)
